@@ -110,4 +110,68 @@
 
 ---
 
-如需代码细节、接口模板、插件开发规范、models调用用例、消息队列建议或CMake范例等，可补充具体需求。
+## 工作流程（Mermaid）
+
+下面是系统典型工作流程图（Mermaid 格式）。把这段放到文档里可以在支持 mermaid 的渲染器里直接看到流程图。
+
+```mermaid
+flowchart TD
+  CLI[CLI 用户输入]
+  subgraph MCP [MASManager / MCP]
+    direction TB
+    MCPNode[MCPManager]
+    PluginMgr[PluginManager]
+    ModelSel[ModelSelector]
+    APIMan[APIManager]
+    ApprovalQ[ApprovalQueue]
+    DataMgr[DataManager]
+    SubReg[SubAgentRegistry]
+  end
+
+  subgraph Agents [Agents 层]
+    direction LR
+    Leader[LeaderAgent]
+    Mid[MidAgent]
+    Worker[WorkerAgent]
+  end
+
+  subgraph Tools [工具层]
+    direction TB
+    FileTool[FileTool]
+    DBTool[DBTool]
+    ExternalAPI[外部模型/API]
+  end
+
+  CLI -->|命令| MCPNode
+  MCPNode --> PluginMgr
+  PluginMgr --> MCPNode
+  MCPNode --> ModelSel
+  ModelSel --> APIMan
+
+  MCPNode --> SubReg
+  SubReg --> Leader
+  SubReg --> Mid
+  SubReg --> Worker
+
+  MCPNode -->|分派任务| Leader
+  Leader -->|拆解/转发| Mid
+  Mid -->|执行/协作| Worker
+  Worker -->|调用工具| Tools
+
+  Worker -->|返回结果| Mid
+  Mid -->|写入申请| ApprovalQ
+  ApprovalQ -->|需审批| Leader
+  Leader -->|审批通过| DataMgr
+  DataMgr -->|持久化| DBTool
+
+  APIMan --> ExternalAPI
+  ExternalAPI --> APIMan
+  APIMan -->|模型输出| Worker
+
+  PluginMgr -->|审计/修正| MCPNode
+  PluginMgr -->|修正描述| ModelSel
+
+  MCPNode -->|日志/状态| DataMgr
+```
+
+---
