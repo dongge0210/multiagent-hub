@@ -1,4 +1,4 @@
-# 多智能体C++系统结构与实现框架说明（AI工程师版）
+# 多智能体C++系统结构与实现框架说明
 
 ## 一、项目目录结构
 
@@ -14,13 +14,8 @@
 │   ├── cli/
 │   │   └── main.cpp                   # 命令行主入口
 │   │   └── CliCommandParser.h/.cpp
-│   ├── mcp/
-│   │   ├── MCPManager.h/.cpp          # 多Agent中央调度/权限/审批/组队/日志
-│   │   ├── PluginManager.h/.cpp       # 插件加载与注册
-│   │   └── plugins/
-│   │       ├── IMCPPlugin.h           # 插件标准接口
-│   │       ├── AIAuditPlugin.h/.cpp   # 专用插件示例
-│   │       └── ...                    
+│   ├── mas/
+│   │   ├── MASManager.h/.cpp          # 多Agent中央调度/权限/审批/组队/日志（MAS）
 │   ├── agents/
 │   │   ├── IAgent.h
 │   │   ├── LeaderAgent.h/.cpp
@@ -53,23 +48,17 @@
 
 ## 二、整体架构/流程
 
-- 所有CLI命令，优先交给MCPManager调度。
-- MCPManager负责权限、Agent调度、模型/API分配、审批流、组队和日志。
+- 所有CLI命令，优先交给MASManager调度。
+- MASManager负责权限、Agent调度、模型/API分配、审批流、组队和日志（整体系统称为 MAS）。
 - Agent分为三层：Leader/Mid/Worker，均通过注册中心（SubAgentRegistry）动态发现、协同、串门。
-- 工具（Tools）作为独立模块，所有Agent只通过接口使用，不直接操作底层资源。
-- 插件机制让MCPManager能力按需扩展，支持多AI插件热插拔，例如AI安全审计、描述自动修正等。
-- 数据、审批、日志通过db目录中的DataManager和ApprovalQueue完成。
-- 配置（config/目录）JSON，零编译热更。
 
 ---
 
 ## 三、实现要点与机制
 
-### 1. MCP（中央调度与插件机制）
-- `MCPManager`负责agent注册、权限校验、任务路由、审批流和组队。所有CLI及Agent互通都走这里。
-- 支持插件加载：启动时通过`PluginManager`动态扫描`plugins/`目录，将所有`IMCPPlugin`实例纳入调度。
-- 插件可注册回调，在“任务下发前/后/错误时”介入业务流程（如任务描述自修正、AI输出安全审核等）。
-- 插件通过配置文件进行开关管理。
+### 1. MAS（中央调度与整体）
+
+- `MASManager`负责 agent 注册、权限校验、任务路由、审批流和组队。MAS 作为整体负责多智能体协作与资源调度。
 
 ### 2. Agent三层分工与注册
 - 所有agent必须实现`IAgent`接口，支持标准的“接收任务-调用工具-交互-回传结果”。
@@ -94,10 +83,10 @@
 
 ## 四、开发和部署建议
 
-1. **目录搭起后，逐步落每个目录的基类/核心流程接口**，如IAgent、ITool、IMCPPlugin等。
-2. **先实现MCP、Agent、Tools之间调用主流程**，可用模拟数据或mock工具实现通过“命令-路由-审批-写入-日志”的完整最小链路（能跑起来为准）。
+1. **目录搭起后，逐步落每个目录的基类/核心流程接口**，如IAgent、ITool等。
+2. **先实现MAS、Agent、Tools之间调用主流程**，可用模拟数据或mock工具实现通过“命令-路由-审批-写入-日志”的完整最小链路（能跑起来为准）。
 3. **逐步替换Mock为真实API和工具实现**，并增加测试覆盖常见串门、组队、超限等场景。
-4. 测试建议直接写在test/目录下，细分任务流、审批边界、多agent协作、插件介入等用例。
+4. 测试建议直接写在test/目录下，细分任务流、审批边界、多agent协作等用例。
 
 ---
 
@@ -116,8 +105,6 @@
 
 - **如何加新agent或工具？**  
   实现IAgent/ITool接口后，在SubAgentRegistry/DataManager等地注册，配置agent_matrix.json分配权限即可。
-- **如何自定义插件？**  
-  继承IMCPPlugin，实现接口，在plugins/目录新写插件后config/里开启开关。
 - **模型API速率或额度怎么配？**  
   直接改config/api_config.json，自定义最大并发、token池等。
 
