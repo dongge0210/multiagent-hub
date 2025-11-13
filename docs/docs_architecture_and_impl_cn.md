@@ -137,30 +137,49 @@ flowchart TD
         ApprovalQ[ApprovalQueue]
         DataMgr[DataManager]
         LogMgr[LogManager]
-    end
-
-    subgraph LLMSystem [LLM系统]
-        LLMAPI[LLMAPIManager]
-        ModelSel[ModelSelector]
-        TokenMgr[TokenManager]
-    end
-
-    subgraph MCPSystem [MCP系统]
-        MCPClient[MCPClient]
-        ToolReg[ToolRegistry]
-        ToolInv[ToolInvoker]
+        
+        MASManager --> SubReg
+        MASManager --> ApprovalQ
+        MASManager --> DataMgr
+        MASManager --> LogMgr
     end
 
     subgraph AgentLayer [Agent层]
         Leader[LeaderAgent]
         Mid[MidAgent]
         Worker[WorkerAgent]
+        
+        SubReg --> Leader
+        Leader --> Mid
+        Mid --> Worker
+    end
+
+    subgraph LLMSystem [LLM系统]
+        LLMAPI[LLMAPIManager]
+        ModelSel[ModelSelector]
+        TokenMgr[TokenManager]
+        
+        LLMAPI --> ModelSel
+        LLMAPI --> TokenMgr
+    end
+
+    subgraph MCPSystem [MCP系统]
+        MCPClient[MCPClient]
+        ToolReg[ToolRegistry]
+        ToolInv[ToolInvoker]
+        
+        MCPClient --> ToolReg
+        ToolReg --> ToolInv
     end
 
     subgraph ToolLayer [工具层]
         FileTool[文件操作工具]
         DBTool[数据库工具]
         APITool[API调用工具]
+        
+        ToolInv --> FileTool
+        ToolInv --> DBTool
+        ToolInv --> APITool
     end
 
     subgraph ExternalServices [外部服务]
@@ -169,23 +188,9 @@ flowchart TD
         LocalLLM[本地LLM服务]
     end
 
-    %% 主要连接线 - 避免交叉
-    MASManager --> SubReg
-    MASManager --> ApprovalQ
-    MASManager --> DataMgr
-    MASManager --> LogMgr
-
-    SubReg --> Leader
-    Leader --> Mid
-    Mid --> Worker
-
     %% Agent到服务的连接
     Worker --> LLMAPI
     Worker --> MCPClient
-
-    %% LLM系统内部
-    LLMAPI --> ModelSel
-    LLMAPI --> TokenMgr
 
     %% LLM到外部服务
     LLMAPI --> OpenAI
@@ -196,15 +201,6 @@ flowchart TD
     OpenAI --> LLMAPI
     Claude --> LLMAPI
     LocalLLM --> LLMAPI
-
-    %% MCP系统内部
-    MCPClient --> ToolReg
-    ToolReg --> ToolInv
-
-    %% 工具层连接
-    ToolInv --> FileTool
-    ToolInv --> DBTool
-    ToolInv --> APITool
 
     %% 工具层返回
     FileTool --> ToolInv
