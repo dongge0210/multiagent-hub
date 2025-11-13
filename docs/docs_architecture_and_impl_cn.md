@@ -129,40 +129,78 @@
 
 ```mermaid
 flowchart TD
-    %% 输入-决策
     CLI[CLI 用户输入] --> MASManager
 
-    %% 系统分区
     subgraph 核心系统
-        MASManager
-        SubAgentRegistry
-        ApprovalQueue
-        DataManager
-        LogManager
+        MASManager[MASManager]
+        SubAgentRegistry[SubAgentRegistry]
+        ApprovalQueue[ApprovalQueue]
+        DataManager[DataManager]
+        LogManager[LogManager]
+
+        MASManager --> SubAgentRegistry
+        MASManager --> ApprovalQueue
+        MASManager --> DataManager
+        MASManager --> LogManager
+
+        ApprovalQueue --> LogManager
+        MASManager --> LogManager
     end
 
     subgraph Agent层
-        LeaderAgent
-        MidAgent
-        WorkerAgent
+        LeaderAgent[LeaderAgent]
+        MidAgent[MidAgent]
+        WorkerAgent[WorkerAgent]
+
+        SubAgentRegistry --> LeaderAgent
+        LeaderAgent --> MidAgent
+        MidAgent --> WorkerAgent
+
+        %% Worker和系统的连接
+        WorkerAgent --> LLMAPIManager
+        WorkerAgent --> MCPClient
+        WorkerAgent --> ApprovalQueue
+        WorkerAgent --> LogManager
     end
 
     subgraph LLM系统
-        LLMAPIManager
-        ModelSelector
-        TokenManager
+        LLMAPIManager[LLMAPIManager]
+        ModelSelector[ModelSelector]
+        TokenManager[TokenManager]
+
+        LLMAPIManager --> ModelSelector
+        LLMAPIManager --> TokenManager
+
+        %% LLMAPI与外部服务连接
+        LLMAPIManager --> OpenAI
+        LLMAPIManager --> Claude
+        LLMAPIManager --> LocalLLM
+
+        LLMAPIManager --> WorkerAgent
     end
 
     subgraph MCP系统
-        MCPClient
-        ToolRegistry
-        ToolInvoker
+        MCPClient[MCPClient]
+        ToolRegistry[ToolRegistry]
+        ToolInvoker[ToolInvoker]
+
+        MCPClient --> ToolRegistry
+        ToolRegistry --> ToolInvoker
+        ToolInvoker --> FileTool
+        ToolInvoker --> DBTool
+        ToolInvoker --> APITool
+        ToolInvoker --> MCPClient
+        MCPClient --> WorkerAgent
     end
 
     subgraph 工具层
         FileTool[文件操作工具]
         DBTool[数据库工具]
         APITool[API调用工具]
+
+        FileTool --> ToolInvoker
+        DBTool --> ToolInvoker
+        APITool --> ToolInvoker
     end
 
     subgraph 外部服务
@@ -171,55 +209,10 @@ flowchart TD
         LocalLLM[本地LLM服务]
     end
 
-    %% 主控调度与系统
-    MASManager --> SubAgentRegistry
-    MASManager --> ApprovalQueue
-    MASManager --> DataManager
-    MASManager --> LogManager
-
-    %% Agent注册/层级
-    SubAgentRegistry --> LeaderAgent
-    LeaderAgent --> MidAgent
-    MidAgent --> WorkerAgent
-
-    %% Agent与系统互通
-    WorkerAgent -->|任务/请求| LLMAPIManager
-    WorkerAgent --> MCPClient
-    WorkerAgent --> ApprovalQueue
-    WorkerAgent --> LogManager
-
-    %% 审批流程
+    %% 审批、持久化
     ApprovalQueue --> LeaderAgent
     LeaderAgent --> DataManager
     DataManager --> DBTool
-
-    %% 日志流
-    ApprovalQueue --> LogManager
-    MASManager --> LogManager
-
-    %% LLM系统与外部
-    LLMAPIManager --> ModelSelector
-    LLMAPIManager --> TokenManager
-    LLMAPIManager --> OpenAI
-    LLMAPIManager --> Claude
-    LLMAPIManager --> LocalLLM
-
-    %% LLM对Agent
-    LLMAPIManager --> WorkerAgent
-
-    %% MCP工具链
-    MCPClient --> ToolRegistry
-    ToolRegistry --> ToolInvoker
-    ToolInvoker --> FileTool
-    ToolInvoker --> DBTool
-    ToolInvoker --> APITool
-    ToolInvoker --> MCPClient
-    MCPClient --> WorkerAgent
-
-    %% 工具/结果返回
-    FileTool --> ToolInvoker
-    DBTool --> ToolInvoker
-    APITool --> ToolInvoker
 ```
 
 ---
