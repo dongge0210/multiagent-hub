@@ -7,7 +7,7 @@
 ├── CMakeLists.txt                     # 构建或VS工程文件
 ├── README.md
 ├── config/
-│   ├── api_config.json                # API、模型、并发、Token等配置
+│   ├── api_config.json                # LLM API、模型、并发、Token等配置
 │   ├── permissions.json               # 权限/审批/串门规则配置
 │   └── agent_matrix.json              # agent间互访关系等
 ├── src/
@@ -22,9 +22,14 @@
 │   │   ├── MidAgent.h/.cpp
 │   │   ├── WorkerAgent.h/.cpp
 │   │   └── SubAgentRegistry.h/.cpp    # agent发现与组队
-│   ├── api/
-│   │   ├── APIManager.h/.cpp
-│   │   └── ModelSelector.h/.cpp
+│   ├── llm/
+│   │   ├── LLMAPIManager.h/.cpp       # LLM API管理与调用
+│   │   ├── ModelSelector.h/.cpp       # 模型选择与路由
+│   │   └── TokenManager.h/.cpp        # Token使用与限制管理
+│   ├── mcp/
+│   │   ├── MCPClient.h/.cpp           # MCP客户端，AI调用工具的接口
+│   │   ├── ToolRegistry.h/.cpp        # 工具注册与管理
+│   │   └── ToolInvoker.h/.cpp         # 工具调用执行器
 │   ├── tools/
 │   │   ├── ITool.h
 │   │   ├── FileTool.h/.cpp
@@ -49,18 +54,18 @@
 ## 二、整体架构/流程
 
 - 所有CLI命令，优先交给MASManager调度。
-- MASManager负责权限、Agent调度、模型/API分配、审批流、组队和日志（整体系统称为 MAS）。
+- MASManager负责权限、Agent调度、任务分配、审批流、组队和日志（整体系统称为 MAS）。
 - Agent分为三层：Leader/Mid/Worker，均通过注册中心（SubAgentRegistry）动态发现、协同、串门。
+- 所有Agent通过MCP（Model Context Protocol）调用工具，MCP是AI调用工具的标准协议接口。
 
-注：文中 "MCP" 指 "模型上下文协议（Model Context Protocol）"，它是一个独立的组件/服务，用于模型上下文管理、模型选择与API并发/调度等职责。MCP 与 MAS 通过接口（RPC/HTTP/消息队列等）交互，但 MCP 不是 MAS 的插件，文档中已将其从 MAS 内部逻辑分离并单独说明。
+注：文中 "MCP" 指 "模型上下文协议（Model Context Protocol）"，它是AI调用工具的标准协议，提供统一的工具调用接口。MCP客户端负责将Agent的请求转换为具体的工具调用，管理工具注册和执行。
 
 ## 三、实现要点与机制
 
 ### 1. MAS（中央调度与整体）
 
 - `MASManager`负责 agent 注册、权限校验、任务路由、审批流和组队。MAS 作为整体负责多智能体协作与资源调度。
-
-> 注意：涉及模型选择、模型并发限制与模型上下文管理的部分由独立的 MCP 组件负责（见下文），MAS 通过接口调用 MCP 提供的能力，而不是把 MCP 当作 MAS 的插件。
+- MAS不直接管理工具调用，而是通过MCP客户端与工具系统交互。
 
 ### 2. Agent三层分工与注册
 - 所有agent必须实现`IAgent`接口，支持标准的“接收任务-调用工具-交互-回传结果”。
@@ -68,16 +73,22 @@
 - 所有agent通过`SubAgentRegistry`注册和发现，支持临时组队（自由协作），实现agent间“串门”。
 - 权限、可见/可协作关系由`agent_matrix.json`配置。
 
-### 3. 工具与API管理
-- 工具全部接口化，如`ITool`、`IDBTool`，支持热插拔、自动权限分派。
-- `APIManager`管理所有模型API的可用与并发数限制，所有请求必须调度后下发。注意：API 管理与模型选择功能的实现可以由 MCP 提供，MAS 可以委托 MCP 做最终的模型/API选型和并发控制。
-- `ModelSelector`支持按任务内容动态选用最优模型（如gpt-4o/3.5等）。该模块的策略与上下文管理建议放在 MCP 侧实现，从而让 MAS 专注于多 Agent 协作与审批流。
+### 3. LLM API管理
+- `LLMAPIManager`负责管理所有网络LLM API的调用，包括OpenAI、Claude、本地模型等。
+- `ModelSelector`根据任务类型和复杂度动态选择最适合的LLM模型。
+- `TokenManager`监控和控制Token使用量，防止超出配额限制。
 
-### 4. 数据审批与日志
+### 4. MCP工具调用系统
+- `MCPClient`提供统一的工具调用接口，所有Agent通过MCP协议调用工具。
+- `ToolRegistry`负责工具的注册、发现和管理，支持热插拔。
+- `ToolInvoker`负责执行具体的工具调用，处理参数传递和结果返回。
+- 所有工具实现`ITool`接口，通过MCP协议暴露给AI模型调用。
+
+### 5. 数据审批与日志
 - `DataManager`与`ApprovalQueue`组合管理正式和临时写入，所有需审批的数据先入排队，获得Leader批复后正式持久化。
 - `LogManager`全链路记录任务、审批、Agent协作（debug和回溯用）。
 
-### 5. 配置与热扩展
+### 6. 配置与热扩展
 - 全部行为规则、权限关系、模型API、插件启用等，均通过config下json进行集中维护，即改即用无需重编译。
 - 插件拓展能力和Agent注册也可支持动态(进阶可上DLL、so方案或直接源码静态链接）。
 
@@ -107,8 +118,8 @@
 
 - **如何加新agent或工具？**  
   实现IAgent/ITool接口后，在SubAgentRegistry/DataManager等地注册，配置agent_matrix.json分配权限即可。
-- **模型API速率或额度怎么配？**  
-  直接改config/api_config.json，自定义最大并发、token池等。MCP 可作为一个集中管理模型速率与上下文分配的服务，从而让 MAS 无需直接管理模型池。
+- **LLM API速率或额度怎么配？**  
+  直接改config/api_config.json，自定义最大并发、token池等。LLMAPIManager负责统一管理各种LLM API的调用和限制。
 
 ---
 
@@ -118,67 +129,103 @@
 
 ```mermaid
 flowchart TD
-  CLI[CLI 用户输入]
+    CLI[CLI 用户输入] --> MASManager
 
-  subgraph MAS [MAS / MASManager]
-    direction TB
-    MASNode[MCPNode?注意这里指 MASManager]
-    PluginMgr[PluginManager]
-    ApprovalQ[ApprovalQueue]
-    DataMgr[DataManager]
-    SubReg[SubAgentRegistry]
-  end
+    subgraph CoreSystem [核心系统]
+        MASManager[MASManager]
+        SubReg[SubAgentRegistry]
+        ApprovalQ[ApprovalQueue]
+        DataMgr[DataManager]
+        LogMgr[LogManager]
+    end
 
-  subgraph MCP [模型上下文协议（MCP）]
-    direction TB
-    ModelSel[ModelSelector]
-    APIMan[APIManager]
-  end
+    subgraph LLMSystem [LLM系统]
+        LLMAPI[LLMAPIManager]
+        ModelSel[ModelSelector]
+        TokenMgr[TokenManager]
+    end
 
-  subgraph Agents [Agents 层]
-    direction LR
-    Leader[LeaderAgent]
-    Mid[MidAgent]
-    Worker[WorkerAgent]
-  end
+    subgraph MCPSystem [MCP系统]
+        MCPClient[MCPClient]
+        ToolReg[ToolRegistry]
+        ToolInv[ToolInvoker]
+    end
 
-  subgraph Tools [工具层]
-    direction TB
-    FileTool[FileTool]
-    DBTool[DBTool]
-    ExternalAPI[外部模型/API]
-  end
+    subgraph AgentLayer [Agent层]
+        Leader[LeaderAgent]
+        Mid[MidAgent]
+        Worker[WorkerAgent]
+    end
 
-  CLI -->|命令| MASNode
-  MASNode --> PluginMgr
-  MASNode --> MCP
-  MCP --> ModelSel
-  ModelSel --> APIMan
+    subgraph ToolLayer [工具层]
+        FileTool[文件操作工具]
+        DBTool[数据库工具]
+        APITool[API调用工具]
+    end
 
-  MASNode --> SubReg
-  SubReg --> Leader
-  SubReg --> Mid
-  SubReg --> Worker
+    subgraph ExternalServices [外部服务]
+        OpenAI[OpenAI API]
+        Claude[Claude API]
+        LocalLLM[本地LLM服务]
+    end
 
-  MASNode -->|分派任务| Leader
-  Leader -->|拆解/转发| Mid
-  Mid -->|执行/协作| Worker
-  Worker -->|调用工具| Tools
+    %% 主要连接线 - 避免交叉
+    MASManager --> SubReg
+    MASManager --> ApprovalQ
+    MASManager --> DataMgr
+    MASManager --> LogMgr
 
-  Worker -->|返回结果| Mid
-  Mid -->|写入申请| ApprovalQ
-  ApprovalQ -->|需审批| Leader
-  Leader -->|审批通过| DataMgr
-  DataMgr -->|持久化| DBTool
+    SubReg --> Leader
+    Leader --> Mid
+    Mid --> Worker
 
-  APIMan --> ExternalAPI
-  ExternalAPI --> APIMan
-  APIMan -->|模型输出| Worker
+    %% Agent到服务的连接
+    Worker --> LLMAPI
+    Worker --> MCPClient
 
-  PluginMgr -->|审计/修正| MASNode
-  PluginMgr -->|修正描述| ModelSel
+    %% LLM系统内部
+    LLMAPI --> ModelSel
+    LLMAPI --> TokenMgr
 
-  MASNode -->|日志/状态| DataMgr
+    %% LLM到外部服务
+    LLMAPI --> OpenAI
+    LLMAPI --> Claude
+    LLMAPI --> LocalLLM
+
+    %% 外部服务返回
+    OpenAI --> LLMAPI
+    Claude --> LLMAPI
+    LocalLLM --> LLMAPI
+
+    %% MCP系统内部
+    MCPClient --> ToolReg
+    ToolReg --> ToolInv
+
+    %% 工具层连接
+    ToolInv --> FileTool
+    ToolInv --> DBTool
+    ToolInv --> APITool
+
+    %% 工具层返回
+    FileTool --> ToolInv
+    DBTool --> ToolInv
+    APITool --> ToolInv
+
+    %% 结果返回路径
+    LLMAPI --> Worker
+    ToolInv --> MCPClient
+    MCPClient --> Worker
+
+    %% 审批和存储流程
+    Worker --> ApprovalQ
+    ApprovalQ --> Leader
+    Leader --> DataMgr
+    DataMgr --> DBTool
+
+    %% 日志连接
+    MASManager --> LogMgr
+    Worker --> LogMgr
+    ApprovalQ --> LogMgr
 ```
 
 ---
