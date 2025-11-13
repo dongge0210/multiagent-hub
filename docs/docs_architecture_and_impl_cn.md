@@ -129,99 +129,97 @@
 
 ```mermaid
 flowchart TD
+    %% 输入-决策
     CLI[CLI 用户输入] --> MASManager
 
-    subgraph CoreSystem [核心系统]
-        MASManager[MASManager]
-        SubReg[SubAgentRegistry]
-        ApprovalQ[ApprovalQueue]
-        DataMgr[DataManager]
-        LogMgr[LogManager]
-        
-        MASManager --> SubReg
-        MASManager --> ApprovalQ
-        MASManager --> DataMgr
-        MASManager --> LogMgr
+    %% 系统分区
+    subgraph 核心系统
+        MASManager
+        SubAgentRegistry
+        ApprovalQueue
+        DataManager
+        LogManager
     end
 
-    subgraph AgentLayer [Agent层]
-        Leader[LeaderAgent]
-        Mid[MidAgent]
-        Worker[WorkerAgent]
-        
-        SubReg --> Leader
-        Leader --> Mid
-        Mid --> Worker
+    subgraph Agent层
+        LeaderAgent
+        MidAgent
+        WorkerAgent
     end
 
-    subgraph LLMSystem [LLM系统]
-        LLMAPI[LLMAPIManager]
-        ModelSel[ModelSelector]
-        TokenMgr[TokenManager]
-        
-        LLMAPI --> ModelSel
-        LLMAPI --> TokenMgr
+    subgraph LLM系统
+        LLMAPIManager
+        ModelSelector
+        TokenManager
     end
 
-    subgraph MCPSystem [MCP系统]
-        MCPClient[MCPClient]
-        ToolReg[ToolRegistry]
-        ToolInv[ToolInvoker]
-        
-        MCPClient --> ToolReg
-        ToolReg --> ToolInv
+    subgraph MCP系统
+        MCPClient
+        ToolRegistry
+        ToolInvoker
     end
 
-    subgraph ToolLayer [工具层]
+    subgraph 工具层
         FileTool[文件操作工具]
         DBTool[数据库工具]
         APITool[API调用工具]
-        
-        ToolInv --> FileTool
-        ToolInv --> DBTool
-        ToolInv --> APITool
     end
 
-    subgraph ExternalServices [外部服务]
+    subgraph 外部服务
         OpenAI[OpenAI API]
         Claude[Claude API]
         LocalLLM[本地LLM服务]
     end
 
-    %% Agent到服务的连接
-    Worker --> LLMAPI
-    Worker --> MCPClient
+    %% 主控调度与系统
+    MASManager --> SubAgentRegistry
+    MASManager --> ApprovalQueue
+    MASManager --> DataManager
+    MASManager --> LogManager
 
-    %% LLM到外部服务
-    LLMAPI --> OpenAI
-    LLMAPI --> Claude
-    LLMAPI --> LocalLLM
+    %% Agent注册/层级
+    SubAgentRegistry --> LeaderAgent
+    LeaderAgent --> MidAgent
+    MidAgent --> WorkerAgent
 
-    %% 外部服务返回
-    OpenAI --> LLMAPI
-    Claude --> LLMAPI
-    LocalLLM --> LLMAPI
+    %% Agent与系统互通
+    WorkerAgent -->|任务/请求| LLMAPIManager
+    WorkerAgent --> MCPClient
+    WorkerAgent --> ApprovalQueue
+    WorkerAgent --> LogManager
 
-    %% 工具层返回
-    FileTool --> ToolInv
-    DBTool --> ToolInv
-    APITool --> ToolInv
+    %% 审批流程
+    ApprovalQueue --> LeaderAgent
+    LeaderAgent --> DataManager
+    DataManager --> DBTool
 
-    %% 结果返回路径
-    LLMAPI --> Worker
-    ToolInv --> MCPClient
-    MCPClient --> Worker
+    %% 日志流
+    ApprovalQueue --> LogManager
+    MASManager --> LogManager
 
-    %% 审批和存储流程
-    Worker --> ApprovalQ
-    ApprovalQ --> Leader
-    Leader --> DataMgr
-    DataMgr --> DBTool
+    %% LLM系统与外部
+    LLMAPIManager --> ModelSelector
+    LLMAPIManager --> TokenManager
+    LLMAPIManager --> OpenAI
+    LLMAPIManager --> Claude
+    LLMAPIManager --> LocalLLM
 
-    %% 日志连接
-    MASManager --> LogMgr
-    Worker --> LogMgr
-    ApprovalQ --> LogMgr
+    %% LLM对Agent
+    LLMAPIManager --> WorkerAgent
+
+    %% MCP工具链
+    MCPClient --> ToolRegistry
+    ToolRegistry --> ToolInvoker
+    ToolInvoker --> FileTool
+    ToolInvoker --> DBTool
+    ToolInvoker --> APITool
+    ToolInvoker --> MCPClient
+    MCPClient --> WorkerAgent
+
+    %% 工具/结果返回
+    FileTool --> ToolInvoker
+    DBTool --> ToolInvoker
+    APITool --> ToolInvoker
 ```
 
 ---
